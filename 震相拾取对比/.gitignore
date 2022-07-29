@@ -1,0 +1,17 @@
+data/DiTing330km_part_2.csv
+data/DiTing330km_part_3.csvs
+data/DiTing330km_total.csv
+data/DiTing330km_part_2.hdf5
+data/DiTing330km_part_3.hdf5s
+*.pyc
+utils/__pycache__/__init__.cpython-39.pyc
+utils/__pycache__/data.cpython-39.pyc
+*.temp
+*.pyc
+*.pyc
+*.h5
+utils/__pycache__/data.cpython-39.pyc
+utils/__pycache__/__init__.cpython-39.pyc
+震相拾取工具.zip
+ckpt/unet.temp.pt
+*.hdf5
