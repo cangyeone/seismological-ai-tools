@@ -1,8 +1,6 @@
 import torch 
 import torch.nn as nn 
 import torch.nn.functional as F
-
-
 class ConvBNReLU(nn.Module):
     def __init__(self, nin, nout, stride, ks):
         super().__init__()
@@ -51,12 +49,20 @@ class Model(nn.Module):
             nn.Conv1d(base*10, base*11, 5, 2, padding=2), 
             ResBlock(base*11), 
         )
-        self.out1 = nn.Linear(base*11, 2) # 用于初动判定
-        self.out2 = nn.Linear(base*11, 3) # 用于初动质量评定
+        self.out1 = nn.Linear(base*11, 2)
+        self.out2 = nn.Linear(base*11, 3)
     def forward(self, x):
         T, B, C = x.shape 
-        h = self.layers(x) 
-        h = h.squeeze()
-        y1 = self.out1(h) 
-        y2 = self.out2(h)
-        return y1, y2 
+        x = x[:, 2:, :]
+        x = x - x.mean() 
+        x /= (x.std()+1e-6)
+        h = self.layers(x)
+        h = h.squeeze(dim=2) 
+        y1 = self.out1(h).softmax(dim=1)
+        y2 = self.out2(h).softmax(dim=1)
+        return y1, y2   
+
+model = Model()
+model.eval()
+model.load_state_dict(torch.load("ckpt/polar.pt"))
+torch.jit.save(torch.jit.script(model), "ckpt/polar.jit")
