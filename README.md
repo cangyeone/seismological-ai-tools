@@ -8,6 +8,9 @@ This is an open-source tool for seismological data processing and analysis, incl
 - Among the currently open-sourced models, the picking accuracy of PgSgPnSn four-phase seismic waves is highest.
 - Currently, picker.py defaults to outputting initial movements, including their quality and requires using the onnxruntime library; it was also trained using a nationwide fixed network.
 
+My telegram:
+![telegram](qr.jpg)
+
 ### Software Architecture
 The software is entirely built on Python. Each project is independent and relies on:
 - obspy: for data reading
