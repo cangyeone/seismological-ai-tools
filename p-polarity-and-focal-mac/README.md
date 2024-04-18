@@ -1,31 +1,24 @@
-### 地震震源参数计算（通过初动）
-基于hashpy程序，即HASH1.2编译的Python版程序。
+###focal mechanisms
+Earthquake source parameter calculation (through initial motion) is based on the hashpy program, which is a Python version program compiled from HASH1.2.
+### Training and Testing
+#### Training
+The training program is relatively simple, just run ploar.train.py directly. The network input is the Z-component waveform of 1024 samples, and the output is the initial motion direction and quality. However, the quality of the initial motion is not accurate. Training data are prepared using [H5 file production](hdf5-dataset-tools).
 
-### 训练和测试
-#### 训练
-训练程序较为简单，直接运行ploar.train.py即可，网络输入为1024采样点的Z分量波形，输出为初动方向和初动质量。但是初动质量并不准确。 
-训练数据使用[H5文件制作](https://github.com/cangyeone/seismological-ai-tools/tree/main/MSEED%E6%96%87%E4%BB%B6%E7%B4%A2%E5%BC%95%E5%92%8CH5%E5%88%B6%E4%BD%9C)来制作训练数据。
+#### Testing
+Testing data statistics parameters include information such as recall rate and precision rate. Its structure is similar to training.
 
-#### 测试
-测试数据统计参数为查全率和查准率等信息。其结构与训练类似。
+#### About three-component data for initial motion detection
+Single-component and three-component waveform data can be used for initial motion detection, but in testing it was found that there was little difference in accuracy between them, so it is recommended to use a single Z-component waveform.
 
-#### 关于三分量数据
-初动检测可以使用单分量和三分量波形数据，但是测试中发现二者精度区别不大，因此建议使用单一Z分量波形。
-
-
-
-### 基于P波初动对震源参数进行计算
-通过P波初动进行震源参数计算包含三个程序：
-1. 震相拾取程序。使用目前精度最高的RNN模型拾取地震P波。已经制作为jit模型。
-2. 初动判断程序。使用训练的初动计算程序判断P波初动方向。使用make.jit.py制作jit模型
-3. HASH计算初动。使用hashpy程序所包含的二进制库。
-
-在计算之前需要的处理包括：
-1. 波形数据需要使用三分量的mseed格式数据。
-2. 数据需要制作mseed索引数据库，用于方便的从数据库中截取数据。
-3. 计算震源参数程序使用focal-mechnisms.py，代码中有注释可以根据需要修改。
-
-处理过程中的方便之处是:
-1. 无需人工标注P波，仅需给定地震位置和时间以及台站位置便可以自动拾取P波。
-2. 无需标注初动，由第一步截取并自动判断。
-3. 自动初动质量判断，基于输出置信度进行判断。
+### Calculation of source parameters based on P-wave initiation
+Source parameter calculation through P-wave initiation includes three programs:
+1. Phase picking program: Uses the currently most accurate RNN model to pick up earthquake P-waves. It has been made into a jit model.
+2. Initial motion judgment program: Uses trained initial motion calculation programs to determine the direction of P-wave initiation. Use make.jit.py to create jit models.
+3. HASH calculation for initial motion: Uses binary libraries included in hashpy programs for calculations.Before calculating, processing includes:
+   1.Waveform data needs to use mseed format data with three components.
+   2.Data needs to be indexed into an mseed database for easy retrieval from the database.
+   3.The focal-mechanisms.py program is used for calculating source parameters; there are comments in the code that can be modified as needed.
+Convenience during processing includes:
+   1.No need for manual labeling of P-waves; only need to provide earthquake location and time as well as station location to automatically pick up P-waves.
+   2.No need for labeling of initial motions; they are automatically determined by cutting off at step one.
+   3.Automatic determination of initial motion quality based on confidence level outputs.
