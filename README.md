@@ -1,35 +1,25 @@
-# 地震学AI工具
+## Seismology AI Tool
 
-#### 介绍
-用于地震学处理分析的开源工具，目前包括：
-震相拾取、极化、频散提取
+### Introduction
+This is an open-source tool for seismological data processing and analysis, including phase picking, polarization, and dispersion extraction.
 
-#### 软件架构
-软件完全基于Python构建
-每个项目均是独立的，依赖于：
-- obspy：数据读取
-- PyTorch：深度学习库
-- OpenCV：图像处理
+### Software Architecture
+The software is entirely built on Python. Each project is independent and relies on:
+- obspy: for data reading
+- PyTorch: for deep learning
+- OpenCV: for image processing
+  
+### Installation Tutorial
+1. It is recommended to install the latest version of Anaconda.
+2. Other libraries can be installed using pip.
+3. For deep learning libraries, it is suggested to use conda for basic environment installation process.
+For installation guidance, please refer to the article [Python Environment and Usage Issues - Such Articles - Zhihu](https://zhuanlan.zhihu.com/p/414300182).
 
+### Instructions for Use
+Please refer to the content in each respective folder.
 
-#### 安装教程
+#### Contribution Participation
+Contributions can be made by contacting cangye@Hotmail.com.
 
-1.  建议安装Anaconda最新版本
-2.  其他库可以使用pip进行安装
-3.  深度学习库建议使用conda
-
-基础环境安装过程参考文章
-[Python环境与使用问题 - 如是的文章 - 知乎](https://zhuanlan.zhihu.com/p/414300182)
-
-
-#### 使用说明
-
-请参考各自文件夹内的内容。
-
-#### 参与贡献
-
-如是：cangye@Hotmail.com
-
-
-#### 许可证
+#### License 
 GPLv3
