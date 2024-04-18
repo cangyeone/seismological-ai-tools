@@ -1,12 +1,12 @@
-### 地震波形去噪程序
-使用STEAD数据集训练的去噪网络
-![滤波效果](logdir/神经网络滤波.jpg)
+### The denoising program
+The denoising program for seismic waveforms uses the STEAD dataset to train the denoising network. 
 
-### 训练
-程序较为简单，可以直接阅读代码。包含两个训练代码：
-1. train.py，使用编码解码结构用于波形去噪
-2. trainwithpick.py，结合震相拾取模型训练，使得滤波后依然可以保证拾取PS震相。
+The training program is relatively simple and can be directly read in the code. 
 
-数据文件放在data文件夹中，stead数据集中包含两个：
+It includes two training codes: 
+1. train.py, which uses an encoder-decoder structure for waveform denoising; 
+2. trainwithpick.py, which combines the phase picking model training to ensure that the picked PS phase can still be guaranteed after filtering. 
+ 
+The data files are placed in the data folder, including two from the STEAD dataset: 
 - data/waveforms_11_13_19.hdf5 
 - data/metadata_11_13_19.csv
