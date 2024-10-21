@@ -16,6 +16,7 @@ from config.fastlink import Parameter as global_par
 import scipy.signal as signal 
 import datetime 
 import heapq 
+import pickle 
 plt.switch_backend("agg")
 class Model(nn.Module):
     def __init__(self):
@@ -33,12 +34,15 @@ class Model(nn.Module):
         y = self.dense(x) 
         return y 
 class Link2d():
-    def __init__(self):
+    def __init__(self, device):
         self.link2dnet = Model() 
         self.link2dnet.eval() 
-        self.link2dnet.cuda() 
+        
         self.link2dnet.load_state_dict(torch.load("ckpt/link32.ckpt", map_location="cpu"))
+        self.link2dnet.to(device)
+        self.device = device 
     def links(self, data_tool):
+        device = self.device 
         grid_size = 20
         #print(x, np.max(x, axis=0))
         #min_lon, min_lat, _ = np.min(data_tool.data[:, :3], axis=0) 
@@ -60,8 +64,8 @@ class Link2d():
         mlinks = []
         mphase = []
         mclass = []
-        grid1 = (torch.zeros([grid_size, 1], dtype=torch.float32) + torch.arange(min_lon, max_lon, dlon)[:grid_size].reshape(1, grid_size)).cuda().reshape(grid_size, grid_size, 1)   
-        grid2 = (torch.arange(min_lat, max_lat, dlat)[:grid_size].reshape(grid_size, 1) + torch.zeros([1, grid_size], dtype=torch.float32)).cuda().reshape(grid_size, grid_size, 1)
+        grid1 = (torch.zeros([grid_size, 1], dtype=torch.float32) + torch.arange(min_lon, max_lon, dlon)[:grid_size].reshape(1, grid_size)).to(device).reshape(grid_size, grid_size, 1)   
+        grid2 = (torch.arange(min_lat, max_lat, dlat)[:grid_size].reshape(grid_size, 1) + torch.zeros([1, grid_size], dtype=torch.float32)).to(device).reshape(grid_size, grid_size, 1)
         def caldist(pars, r=6371):
             lat1 = torch.deg2rad(pars[:, 1:2])
             lat2 = torch.deg2rad(pars[:, 3:4])
@@ -105,6 +109,9 @@ class Link2d():
                 mclass.append(0)
                 mphase.append([]) 
                 if (t+1) % global_par.saveitv == 0:
+                    #print(np.array(mlinks))
+                    #print(np.array(mgrids))
+                    #print(np.)
                     np.savez(f"{global_par.datadir}/link{t}.npz", mlinks=mlinks, mgrids=mgrids, mphase=mphase, mclass=mclass, mtime=btime)
                     mgrids = []
                     mlinks = []
@@ -117,8 +124,8 @@ class Link2d():
             N, C = data.shape
             #ptype = datas[:, 4].astype(np.int32)
             #ptype = torch.from_numpy(ptype).long() 
-            ptype = torch.zeros([grid_size, grid_size, N]).cuda()
-            ptype[:, :, :] = torch.from_numpy(datas[:, 4].astype(np.int64)).long().cuda() 
+            ptype = torch.zeros([grid_size, grid_size, N]).to(device)
+            ptype[:, :, :] = torch.from_numpy(datas[:, 4].astype(np.int64)).long().to(device) 
             types = datas[:, 4].astype(np.int64)
             if N < global_par.nps or np.sum(types==1)<global_par.np or np.sum(types==2)<global_par.ns:
                 mgrids.append([])
@@ -127,21 +134,29 @@ class Link2d():
                 mclass.append(0)
                 mphase.append([]) 
                 if (t+1) % global_par.saveitv == 0:
-                    np.savez(f"{global_par.datadir}/link{t}.npz", mlinks=mlinks, mgrids=mgrids, mphase=mphase, mclass=mclass, mtime=btime)
+                    #pickle.dump("")
+                    with open(f"{global_par.datadir}/link{t}.pkl", "wb") as f:
+                        pickle.dump([mlinks, mgrids, mphase, mclass, btime], f)
+                    #np.savez(f"{global_par.datadir}/link{t}.npz", 
+                    #        mlinks=np.array(mlinks, dtype=object), 
+                    #        mgrids=mgrids, 
+                    #        mphase=mphase, 
+                    #        mclass=mclass, 
+                    #        mtime=btime)
                     mgrids = []
                     mlinks = []
                     mphase = []
                     mclass = []
                     btime = data_tool.basetime + datetime.timedelta(seconds=data_tool.start)
                 continue 
-            d = torch.from_numpy(data).float().cuda()
-            grid = torch.zeros([grid_size, grid_size, N, 5]).cuda()
+            d = torch.from_numpy(data).float().to(device)
+            grid = torch.zeros([grid_size, grid_size, N, 5]).to(device)
             grid[:, :, :, 0] = grid1 
             grid[:, :, :, 1] = grid2 
             grid[:, :, :, 2:] = d.reshape(1, 1, N, 3)
             grid = torch.reshape(grid, [-1, 5])
             disttime = caldist(grid)
-            logit = self.link2dnet(disttime.cuda()) 
+            logit = self.link2dnet(disttime.to(device)) 
             
             prob = F.softmax(logit, dim=1)
             num = (prob[:, 0].reshape([grid_size * grid_size, N])<0.5).float().sum(1)
@@ -169,13 +184,17 @@ class Link2d():
             mlinks.append(num
             )
             if (t+1) % global_par.saveitv == 0:
-                np.savez(f"{global_par.datadir}/link{t}.npz", mlinks=mlinks, mgrids=mgrids, mphase=mphase, mclass=mclass, mtime=btime)
+                #np.savez(f"{global_par.datadir}/link{t}.npz", mlinks=mlinks, mgrids=mgrids, mphase=mphase, mclass=mclass, mtime=btime)
+                with open(f"{global_par.datadir}/link{t}.pkl", "wb") as f:
+                    pickle.dump([mlinks, mgrids, mphase, mclass, btime], f)
                 mgrids = []
                 mlinks = []
                 mphase = []
                 mclass = []
                 btime = data_tool.basetime + datetime.timedelta(seconds=data_tool.start)
-        np.savez(f"{global_par.datadir}/link{t}.npz", mlinks=mlinks, mgrids=mgrids, mphase=mphase, mclass=mclass, mtime=btime)
+        #np.savez(f"{global_par.datadir}/link{t}.npz", mlinks=mlinks, mgrids=mgrids, mphase=mphase, mclass=mclass, mtime=btime)
+        with open(f"{global_par.datadir}/link{t}.pkl", "wb") as f:
+            pickle.dump([mlinks, mgrids, mphase, mclass, btime], f)
 import datetime 
 import os 
 import heapq 
@@ -188,16 +207,17 @@ class Item(object):
     def __getitem__(self, a):
         return self.idx  
 class DataLPPN():
-    def __init__(self, infilename, stationfile):
+    def __init__(self, infilename, stationfile, device):
         self.pos_dict = {}
         file_ = open(stationfile, "r", encoding="utf-8") 
         for line in file_.readlines():
             sline = [i for i in line.split(" ") if len(i)>0] 
             # 台站ID：SC.JHO
-            key = ".".join(sline[2:4])
+            key = ".".join(sline[:2])
             #if "SC" != sline[0] and "YN" != sline[1]:continue 
             # 台站经纬度
-            x, y = float(sline[0]), float(sline[1]) 
+            print(sline)
+            x, y = float(sline[3]), float(sline[4]) 
             self.pos_dict[key] = [x, y]
         print("台站数量", len(self.pos_dict))
         file_.close() 
@@ -237,8 +257,8 @@ class DataLPPN():
         self.maxtm = np.max(self.datas[:, 2])
         self.minloc = np.min(self.datas[:, :2], axis=0) 
         self.maxloc = np.max(self.datas[:, :2], axis=0)
-        self.index = torch.from_numpy(self.datas[:, 2].astype(np.float32)).cuda()
-        self.tdata = torch.from_numpy(self.data.astype(np.float32)).cuda()
+        self.index = torch.from_numpy(self.datas[:, 2].astype(np.float32)).to(device)
+        self.tdata = torch.from_numpy(self.data.astype(np.float32)).to(device)
         self.winheap = []
         while True:
             if self.dataheap[0][0] < self.mintm + global_par.win_length:
@@ -281,15 +301,17 @@ def link(outfilename):
     outfile = open(outfilename, "w", encoding="utf-8")
     filenames = os.listdir(global_par.datadir)
     for fn in filenames:
-        if fn.endswith(".npz") == False:continue 
+        if fn.endswith(".pkl") == False:continue 
         path = os.path.join(global_par.datadir, fn)
-        file_ = np.load(path, allow_pickle=True)
-        mlinks = file_["mlinks"] 
-        mgrids = file_["mgrids"] 
+        with open(path, "rb") as f:
+            mlinks, mgrids, mphase, mclass, btime = pickle.load(f)
+        #file_ = np.load(path, allow_pickle=True)
+        #mlinks = file_["mlinks"] 
+        #mgrids = file_["mgrids"] 
         peaks, _ = signal.find_peaks(mlinks)
         L = len(peaks)
         count = 0
-        reftime = file_["mtime"]
+        reftime = btime
 
 
         #outfile.write("#是否在目录中,EVENT,位置编码,时间\n##PHASE,时间,修正类型,台站,原始类型\n")
@@ -333,18 +355,30 @@ def link(outfilename):
                 pname = c["pname"]
                 a = int(a)
                 outfile.write(f"PHASE,{pstr},{id2t[a]},{stkey},{pname},{b[0]},{b[1]}\n")
-        print("峰值个数", len(peaks), "地震个数", n)
+        print("Number of peaks.", len(peaks), "number of event", n)
 
 import argparse
+import shutil 
 if __name__ == "__main__":
     # 处理输出某个时间之后的所有震相
     parser = argparse.ArgumentParser(description="拾取连续波形")          
-    parser.add_argument('-i', '--input', default="odata/luding.pick.pnsn.txt", help="拾取震相文件")       
-    parser.add_argument('-o', '--output', default="odata/luding.fastlink.pnsn.txt", help="输出文件名")   
-    parser.add_argument('-s', '--station', default="odata/station.loc", help="台站位置信息") 
+    parser.add_argument('-i', '--input', default="data/YC.txt", help="Picker file")       
+    parser.add_argument('-o', '--output', default="odata/test2.txt", help="Output name")   
+    parser.add_argument('-s', '--station', default="data/station_fastlink.txt", help="Location of station (Format: NET STA LOC long. lat. height)") 
+    parser.add_argument('-d', '--device', default="cuda", help="device") 
     args = parser.parse_args()   
-    os.system("rm fastdata/*.npz")
-    data = DataLPPN(args.input, args.station)
-    tool = Link2d()
-    tool.links(data)
-    link(args.output) 
+    tfiledir = "fastdata"
+    if os.path.exists(tfiledir)==True:
+        if len(os.listdir(tfiledir))!=0:
+            tag = input("The temporary file has exised! Delated? ")
+            if tag in ["Y", "y"]:
+                shutil.rmtree(tfiledir)
+                os.mkdir(tfiledir)
+                device = torch.device(args.device)
+                data = DataLPPN(args.input, args.station, device)
+                tool = Link2d(device)
+                tool.links(data)
+                link(args.output) 
+            if tag in ["N", "n"]:
+                link(args.output) 
+
