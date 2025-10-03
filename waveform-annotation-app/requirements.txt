@@ -5,3 +5,4 @@ pandas>=2.0
 scipy>=1.11
 torch>=2.1
 h5py>=3.9
+obspy>=1.4

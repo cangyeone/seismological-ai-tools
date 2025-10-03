@@ -10,8 +10,8 @@ an analyst.
 
 ## Features
 
-- Load synthetic demonstration data or upload your own NumPy ``.npz`` or
-  HDF5 event packages containing waveform arrays and metadata.
+- Load synthetic demonstration data or upload your own NumPy ``.npz``, HDF5,
+  or SAC files containing waveform arrays and metadata.
 - Visualise multiple station waveforms for a single event in a Plotly figure
   with pan/zoom support and distance-based stacking.
 - Apply common signal-processing filters (band-pass, high-pass, low-pass) using
@@ -43,7 +43,7 @@ an analyst.
 
 ### Preparing custom data
 
-The upload option supports two container formats:
+The upload option supports three container formats:
 
 - ``.npz`` archives with at least the following arrays:
 
@@ -63,6 +63,12 @@ The upload option supports two container formats:
   ``sampling_rate``, and ``event_type`` are read directly from the root group.
   Additional optional datasets such as ``channels`` and ``location_codes`` are
   used when present.
+
+- One or more SAC waveforms for the same event. The loader reads the SAC header
+  information to populate event metadata (e.g., ``kevnm``, ``evla``, ``evlo``,
+  ``evdp``, ``mag``) and station-specific details including distance, azimuth,
+  and sample rate. Upload multiple SAC files at once to build a multi-station
+  event.
 
 See ``data_loader.py`` for additional details on the expected formats and how
 the files are parsed.

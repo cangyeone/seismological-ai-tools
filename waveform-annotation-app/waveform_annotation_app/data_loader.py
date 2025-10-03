@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import io
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import IO
+from typing import IO, Iterable, Sequence
 
 import numpy as np
 
@@ -10,6 +11,11 @@ try:
     import h5py
 except ImportError:  # pragma: no cover - optional dependency for HDF5 support.
     h5py = None
+
+try:
+    from obspy import read as obspy_read
+except ImportError:  # pragma: no cover - optional dependency for SAC support.
+    obspy_read = None
 
 from .event_models import (
     EventData,
@@ -66,6 +72,13 @@ def _ensure_h5py() -> None:
     if h5py is None:
         raise ImportError(
             "h5py is required for reading HDF5 events. Install it via `pip install h5py`."
+        )
+
+
+def _ensure_obspy() -> None:
+    if obspy_read is None:
+        raise ImportError(
+            "obspy is required for reading SAC events. Install it via `pip install obspy`."
         )
 
 
@@ -164,6 +177,145 @@ def load_hdf5_event(file_obj: IO[bytes]) -> EventData:
         magnitude=magnitude,
         event_type=event_type,
     )
+    return EventData(metadata=event_metadata, traces=traces)
+
+
+def _valid_sac_value(value) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (float, np.floating)):
+        if np.isnan(value):
+            return False
+        return float(value) not in {-12345.0, -12345}
+    if isinstance(value, (int, np.integer)):
+        return int(value) not in {-12345}
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped not in {"", "-12345"}
+    return True
+
+
+def _ensure_datetime_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _extract_event_metadata_from_sac(stats) -> EventMetadata:
+    sac = getattr(stats, "sac", None)
+    start_time = _ensure_datetime_utc(stats.starttime.datetime)
+    origin_time = start_time
+    if sac is not None and _valid_sac_value(getattr(sac, "o", None)):
+        origin_time = start_time + timedelta(seconds=float(sac.o))
+
+    event_id = "sac-event"
+    latitude = 0.0
+    longitude = 0.0
+    depth_km = 10.0
+    magnitude = 4.0
+    event_type = "unspecified"
+
+    if sac is not None:
+        if _valid_sac_value(getattr(sac, "kevnm", None)):
+            candidate_id = str(sac.kevnm).strip()
+            if candidate_id:
+                event_id = candidate_id
+        if _valid_sac_value(getattr(sac, "evla", None)):
+            latitude = float(sac.evla)
+        if _valid_sac_value(getattr(sac, "evlo", None)):
+            longitude = float(sac.evlo)
+        if _valid_sac_value(getattr(sac, "evdp", None)):
+            depth_km = float(sac.evdp)
+            if abs(depth_km) > 1000:  # convert metres to kilometres if necessary
+                depth_km /= 1000.0
+        if _valid_sac_value(getattr(sac, "mag", None)):
+            magnitude = float(sac.mag)
+        if _valid_sac_value(getattr(sac, "ictype", None)):
+            event_type = str(sac.ictype).strip().lower()
+
+    return EventMetadata(
+        event_id=event_id,
+        origin_time=origin_time,
+        latitude=latitude,
+        longitude=longitude,
+        depth_km=depth_km,
+        magnitude=magnitude,
+        event_type=event_type,
+    )
+
+
+def _trace_metadata_from_sac(stats) -> TraceMetadata:
+    sac = getattr(stats, "sac", None)
+    start_time = _ensure_datetime_utc(stats.starttime.datetime)
+    sampling_rate = float(stats.sampling_rate)
+    distance_km = 0.0
+    extras = {}
+
+    if sac is not None:
+        if _valid_sac_value(getattr(sac, "dist", None)):
+            distance_km = float(sac.dist)
+        elif _valid_sac_value(getattr(sac, "gcarc", None)):
+            distance_km = float(sac.gcarc) * 111.19
+        if _valid_sac_value(getattr(sac, "az", None)):
+            extras["azimuth"] = float(sac.az)
+        if _valid_sac_value(getattr(sac, "baz", None)):
+            extras["back_azimuth"] = float(sac.baz)
+
+    return TraceMetadata(
+        station_code=getattr(stats, "station", "STA"),
+        network_code=getattr(stats, "network", "NET"),
+        distance_km=distance_km,
+        sampling_rate=sampling_rate,
+        start_time=start_time,
+        channel=getattr(stats, "channel", "BHZ"),
+        location_code=getattr(stats, "location", ""),
+        extras=extras,
+    )
+
+
+def load_sac_event(file_objs: Iterable[IO[bytes]] | IO[bytes]) -> EventData:
+    """Load an :class:`EventData` instance from one or more SAC files."""
+
+    _ensure_obspy()
+
+    if isinstance(file_objs, (io.IOBase, bytes, bytearray)):
+        file_sequence: Sequence[IO[bytes]] = [file_objs]  # type: ignore[assignment]
+    else:
+        file_sequence = list(file_objs)  # type: ignore[arg-type]
+
+    traces: list[TraceData] = []
+    event_metadata: EventMetadata | None = None
+
+    for file_obj in file_sequence:
+        if isinstance(file_obj, (bytes, bytearray)):
+            buffer = io.BytesIO(file_obj)
+        else:
+            if hasattr(file_obj, "seek"):
+                file_obj.seek(0)
+            buffer = io.BytesIO(file_obj.read())
+        buffer.seek(0)
+        stream = obspy_read(buffer, format="SAC")
+        for tr in stream:
+            samples = np.asarray(tr.data, dtype=np.float32)
+            metadata = _trace_metadata_from_sac(tr.stats)
+            traces.append(TraceData(samples=samples, metadata=metadata))
+            if event_metadata is None:
+                event_metadata = _extract_event_metadata_from_sac(tr.stats)
+
+    if not traces:
+        raise ValueError("No SAC traces were loaded from the provided files.")
+
+    if event_metadata is None:
+        first_trace = traces[0]
+        event_metadata = EventMetadata(
+            event_id="sac-event",
+            origin_time=first_trace.metadata.start_time,
+            latitude=0.0,
+            longitude=0.0,
+            depth_km=10.0,
+            magnitude=4.0,
+        )
+
     return EventData(metadata=event_metadata, traces=traces)
 
 

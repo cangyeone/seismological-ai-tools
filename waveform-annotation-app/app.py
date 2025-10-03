@@ -19,6 +19,7 @@ from waveform_annotation_app.data_loader import (
     load_demo_event,
     load_hdf5_event,
     load_npz_event,
+    load_sac_event,
 )
 from waveform_annotation_app.dnn_prelabel import DNNPreLabeler
 from waveform_annotation_app.event_models import EventData, TraceData
@@ -64,7 +65,7 @@ def _sidebar_controls() -> None:
     st.sidebar.header("Data selection")
     source = st.sidebar.radio(
         "Choose dataset",
-        ["Demo event", "Upload NPZ", "Upload HDF5"],
+        ["Demo event", "Upload NPZ", "Upload HDF5", "Upload SAC"],
         key="dataset_source",
     )
 
@@ -77,11 +78,21 @@ def _sidebar_controls() -> None:
             bytes_buffer = io.BytesIO(uploaded.getvalue())
             event = load_npz_event(bytes_buffer)
             _update_event(event)
-    else:
+    elif source == "Upload HDF5":
         uploaded = st.sidebar.file_uploader("Upload .h5 or .hdf5 file", type=["h5", "hdf5"])
         if uploaded is not None:
             bytes_buffer = io.BytesIO(uploaded.getvalue())
             event = load_hdf5_event(bytes_buffer)
+            _update_event(event)
+    else:
+        uploaded_files = st.sidebar.file_uploader(
+            "Upload SAC file(s)",
+            type=["sac", "SAC"],
+            accept_multiple_files=True,
+        )
+        if uploaded_files:
+            buffers = [io.BytesIO(file.getvalue()) for file in uploaded_files]
+            event = load_sac_event(buffers)
             _update_event(event)
 
     st.sidebar.header("Filtering")
