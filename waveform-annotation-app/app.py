@@ -9,17 +9,33 @@ from typing import Dict, List
 
 import pandas as pd
 import streamlit as st
+from streamlit_plotly_events import plotly_events
 
 from waveform_annotation_app.annotation_state import (
     TraceAnnotation,
     annotations_to_dataframe,
     dataframe_to_annotations,
 )
-from waveform_annotation_app.data_loader import load_demo_event, load_npz_event
+from waveform_annotation_app.data_loader import (
+    load_demo_dispersion,
+    load_demo_event,
+    load_dispersion_hdf5,
+    load_dispersion_npz,
+    load_hdf5_event,
+    load_npz_event,
+    load_sac_event,
+)
 from waveform_annotation_app.dnn_prelabel import DNNPreLabeler
+from waveform_annotation_app.dispersion import (
+    DispersionAnnotation,
+    DispersionImage,
+    dataframe_to_dispersion_annotations,
+    dispersion_annotations_to_dataframe,
+    sort_dispersion_annotations,
+)
 from waveform_annotation_app.event_models import EventData, TraceData
 from waveform_annotation_app.filtering import FilterSettings, apply_filter
-from waveform_annotation_app.plotting import create_waveform_figure
+from waveform_annotation_app.plotting import create_dispersion_figure, create_waveform_figure
 
 st.set_page_config(page_title="Seismic Waveform Annotation", layout="wide")
 
@@ -42,6 +58,12 @@ def _initialise_session_state() -> None:
         st.session_state.filter_settings = FilterSettings()
     if "vertical_scale" not in st.session_state:
         st.session_state.vertical_scale = 1.0
+    if "dispersion_image" not in st.session_state:
+        st.session_state.dispersion_image = load_demo_dispersion()
+    if "dispersion_annotations" not in st.session_state:
+        st.session_state.dispersion_annotations: List[DispersionAnnotation] = []
+    if "dispersion_active_branch" not in st.session_state:
+        st.session_state.dispersion_active_branch = "fundamental"
 
 
 def _update_event(event: EventData) -> None:
@@ -56,18 +78,43 @@ def _update_event(event: EventData) -> None:
     }
 
 
+def _update_dispersion_image(image: DispersionImage) -> None:
+    st.session_state.dispersion_image = image
+    st.session_state.dispersion_annotations = []
+
+
 def _sidebar_controls() -> None:
     st.sidebar.header("Data selection")
-    source = st.sidebar.radio("Choose dataset", ["Demo event", "Upload NPZ"], key="dataset_source")
+    source = st.sidebar.radio(
+        "Choose dataset",
+        ["Demo event", "Upload NPZ", "Upload HDF5", "Upload SAC"],
+        key="dataset_source",
+    )
 
     if source == "Demo event":
         if st.sidebar.button("Reload demo"):
             _update_event(load_demo_event())
-    else:
+    elif source == "Upload NPZ":
         uploaded = st.sidebar.file_uploader("Upload .npz file", type="npz")
         if uploaded is not None:
             bytes_buffer = io.BytesIO(uploaded.getvalue())
             event = load_npz_event(bytes_buffer)
+            _update_event(event)
+    elif source == "Upload HDF5":
+        uploaded = st.sidebar.file_uploader("Upload .h5 or .hdf5 file", type=["h5", "hdf5"])
+        if uploaded is not None:
+            bytes_buffer = io.BytesIO(uploaded.getvalue())
+            event = load_hdf5_event(bytes_buffer)
+            _update_event(event)
+    else:
+        uploaded_files = st.sidebar.file_uploader(
+            "Upload SAC file(s)",
+            type=["sac", "SAC"],
+            accept_multiple_files=True,
+        )
+        if uploaded_files:
+            buffers = [io.BytesIO(file.getvalue()) for file in uploaded_files]
+            event = load_sac_event(buffers)
             _update_event(event)
 
     st.sidebar.header("Filtering")
@@ -89,6 +136,35 @@ def _sidebar_controls() -> None:
     st.sidebar.header("Visualisation")
     st.session_state.vertical_scale = st.sidebar.slider("Amplitude scale", min_value=0.1, max_value=5.0, value=st.session_state.vertical_scale)
     st.sidebar.checkbox("Show DNN annotations", value=True, key="show_annotations")
+
+    st.sidebar.header("Dispersion data")
+    dispersion_source = st.sidebar.radio(
+        "Dispersion dataset",
+        ["Demo dispersion", "Upload NPZ", "Upload HDF5"],
+        key="dispersion_source",
+    )
+
+    if dispersion_source == "Demo dispersion":
+        if st.sidebar.button("Reload demo dispersion"):
+            _update_dispersion_image(load_demo_dispersion())
+    elif dispersion_source == "Upload NPZ":
+        uploaded = st.sidebar.file_uploader(
+            "Upload dispersion .npz",
+            type="npz",
+            key="dispersion_npz",
+        )
+        if uploaded is not None:
+            image = load_dispersion_npz(io.BytesIO(uploaded.getvalue()))
+            _update_dispersion_image(image)
+    else:
+        uploaded = st.sidebar.file_uploader(
+            "Upload dispersion HDF5",
+            type=["h5", "hdf5"],
+            key="dispersion_hdf5",
+        )
+        if uploaded is not None:
+            image = load_dispersion_hdf5(io.BytesIO(uploaded.getvalue()))
+            _update_dispersion_image(image)
 
 
 def _prepare_annotations_dataframe(event: EventData) -> pd.DataFrame:
@@ -114,6 +190,40 @@ def _update_annotations_from_dataframe(df: pd.DataFrame) -> None:
         f"{ann.network_code}.{ann.station_code}": ann
         for ann in annotations
     }
+
+
+def _group_dispersion_annotations() -> Dict[str, List[DispersionAnnotation]]:
+    grouped: Dict[str, List[DispersionAnnotation]] = {}
+    for annotation in st.session_state.dispersion_annotations:
+        grouped.setdefault(annotation.branch, []).append(annotation)
+    return grouped
+
+
+def _prepare_dispersion_dataframe() -> pd.DataFrame:
+    return dispersion_annotations_to_dataframe(st.session_state.dispersion_annotations)
+
+
+def _update_dispersion_annotations_from_dataframe(df: pd.DataFrame) -> None:
+    st.session_state.dispersion_annotations = dataframe_to_dispersion_annotations(df)
+
+
+def _next_dispersion_order(branch: str) -> int:
+    existing = [ann.order for ann in st.session_state.dispersion_annotations if ann.branch == branch]
+    if not existing:
+        return 0
+    return max(existing) + 1
+
+
+def _append_dispersion_annotation(period: float, velocity: float, branch: str) -> None:
+    branch_label = branch.strip() or "branch"
+    next_order = _next_dispersion_order(branch_label)
+    new_annotation = DispersionAnnotation(
+        branch=branch_label,
+        period_s=float(period),
+        velocity_kms=float(velocity),
+        order=next_order,
+    )
+    st.session_state.dispersion_annotations.append(new_annotation)
 
 
 def _run_prelabeler(event: EventData) -> None:
@@ -158,6 +268,18 @@ def _export_annotations(event: EventData) -> str:
     return json.dumps(payload, indent=2)
 
 
+def _export_dispersion_annotations(image: DispersionImage) -> str:
+    payload = {
+        "dispersion": {
+            "label": image.label,
+            "periods": image.periods.tolist(),
+            "velocities": image.velocities.tolist(),
+        },
+        "annotations": [ann.to_dict() for ann in sort_dispersion_annotations(st.session_state.dispersion_annotations)],
+    }
+    return json.dumps(payload, indent=2)
+
+
 def main() -> None:
     _initialise_session_state()
     _sidebar_controls()
@@ -166,57 +288,142 @@ def main() -> None:
     st.title("Seismic Waveform Annotation Workbench")
     st.caption("Visualise, filter, and annotate multi-station earthquake records with DNN-assisted picks.")
 
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        filtered_traces: List[TraceData] = []
-        for trace in event.sorted_traces():
-            filtered_traces.append(apply_filter(trace, st.session_state.filter_settings))
-        annotations_dict = st.session_state.annotations
-        fig = create_waveform_figure(
-            filtered_traces,
-            annotations=annotations_dict,
-            vertical_scaling=st.session_state.vertical_scale,
-            show_annotations=st.session_state.show_annotations,
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    wave_tab, dispersion_tab = st.tabs(["Waveforms", "Dispersion"])
 
-    with col2:
-        st.subheader("Event metadata")
-        md = event.metadata
-        st.markdown(
-            f"**ID:** {md.event_id}<br>"
-            f"**Origin:** {md.origin_time.isoformat()}<br>"
-            f"**Location:** {md.latitude:.2f}, {md.longitude:.2f}<br>"
-            f"**Depth:** {md.depth_km:.1f} km<br>"
-            f"**Magnitude:** {md.magnitude:.1f}",
-            unsafe_allow_html=True,
-        )
-        new_type = st.selectbox(
-            "Event type",
-            options=["unspecified", "earthquake", "explosion", "quarry blast", "noise"],
-            index=["unspecified", "earthquake", "explosion", "quarry blast", "noise"].index(md.event_type if md.event_type in {"unspecified", "earthquake", "explosion", "quarry blast", "noise"} else "unspecified"),
-        )
-        event.metadata.event_type = new_type
+    with wave_tab:
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            filtered_traces: List[TraceData] = []
+            for trace in event.sorted_traces():
+                filtered_traces.append(apply_filter(trace, st.session_state.filter_settings))
+            annotations_dict = st.session_state.annotations
+            fig = create_waveform_figure(
+                filtered_traces,
+                annotations=annotations_dict,
+                vertical_scaling=st.session_state.vertical_scale,
+                show_annotations=st.session_state.show_annotations,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col2:
+            st.subheader("Event metadata")
+            md = event.metadata
+            st.markdown(
+                f"**ID:** {md.event_id}<br>"
+                f"**Origin:** {md.origin_time.isoformat()}<br>"
+                f"**Location:** {md.latitude:.2f}, {md.longitude:.2f}<br>"
+                f"**Depth:** {md.depth_km:.1f} km<br>"
+                f"**Magnitude:** {md.magnitude:.1f}",
+                unsafe_allow_html=True,
+            )
+            new_type = st.selectbox(
+                "Event type",
+                options=["unspecified", "earthquake", "explosion", "quarry blast", "noise"],
+                index=["unspecified", "earthquake", "explosion", "quarry blast", "noise"].index(
+                    md.event_type if md.event_type in {"unspecified", "earthquake", "explosion", "quarry blast", "noise"} else "unspecified"
+                ),
+            )
+            event.metadata.event_type = new_type
+
+            st.markdown("---")
+            if st.button("Run DNN pre-annotation"):
+                _run_prelabeler(event)
+
+            annotation_df = _prepare_annotations_dataframe(event)
+            edited_df = st.data_editor(
+                annotation_df,
+                hide_index=True,
+                use_container_width=True,
+                num_rows="dynamic",
+                key="annotation_editor",
+            )
+            _update_annotations_from_dataframe(edited_df)
+
+            export_json = _export_annotations(event)
+            st.download_button(
+                "Download annotations",
+                export_json,
+                file_name=f"{event.metadata.event_id}_annotations.json",
+            )
 
         st.markdown("---")
-        if st.button("Run DNN pre-annotation"):
-            _run_prelabeler(event)
-
-        annotation_df = _prepare_annotations_dataframe(event)
-        edited_df = st.data_editor(
-            annotation_df,
-            hide_index=True,
-            use_container_width=True,
-            num_rows="dynamic",
-            key="annotation_editor",
+        st.info(
+            "Zoom and pan directly within the waveform plots to focus on specific arrivals. Use the DNN suggestions as a starting point and refine manually as needed."
         )
-        _update_annotations_from_dataframe(edited_df)
 
-        export_json = _export_annotations(event)
-        st.download_button("Download annotations", export_json, file_name=f"{event.metadata.event_id}_annotations.json")
+    with dispersion_tab:
+        dispersion_image: DispersionImage = st.session_state.dispersion_image
 
-    st.markdown("---")
-    st.info("Zoom and pan directly within the waveform plots to focus on specific arrivals. Use the DNN suggestions as a starting point and refine manually as needed.")
+        if dispersion_image is None:
+            st.info("Upload a dispersion dataset from the sidebar to begin annotating.")
+        else:
+            st.subheader("Surface-wave dispersion annotator")
+            st.caption(
+                "Click points on the dispersion energy image to build branch polylines. Edit or reorder picks in the table below."
+            )
+
+            branch_label = st.text_input(
+                "Active branch label",
+                value=st.session_state.dispersion_active_branch,
+                help="Points clicked on the image will be assigned to this branch name.",
+            )
+            st.session_state.dispersion_active_branch = branch_label
+
+            fig = create_dispersion_figure(
+                dispersion_image,
+                annotations=_group_dispersion_annotations(),
+            )
+            clicked = plotly_events(
+                fig,
+                click_event=True,
+                hover_event=False,
+                select_event=False,
+                key="dispersion_plot",
+                override_height=600,
+            )
+            if clicked:
+                for pt in clicked:
+                    if "x" in pt and "y" in pt:
+                        _append_dispersion_annotation(pt["x"], pt["y"], branch_label)
+                st.experimental_rerun()
+
+            with st.expander("Dispersion metadata", expanded=True):
+                st.write(
+                    {
+                        "label": dispersion_image.label,
+                        "period_range_s": [float(dispersion_image.periods.min()), float(dispersion_image.periods.max())],
+                        "velocity_range_kms": [float(dispersion_image.velocities.min()), float(dispersion_image.velocities.max())],
+                    }
+                )
+
+            st.markdown("### Dispersion annotations")
+            if st.button("Clear dispersion annotations"):
+                st.session_state.dispersion_annotations = []
+                st.experimental_rerun()
+
+            dispersion_df = _prepare_dispersion_dataframe()
+            edited_dispersion_df = st.data_editor(
+                dispersion_df,
+                hide_index=True,
+                use_container_width=True,
+                num_rows="dynamic",
+                column_config={
+                    "branch": st.column_config.TextColumn("Branch"),
+                    "period_s": st.column_config.NumberColumn("Period (s)", step=0.1, format="%.2f"),
+                    "velocity_kms": st.column_config.NumberColumn("Velocity (km/s)", step=0.05, format="%.2f"),
+                    "order": st.column_config.NumberColumn("Order", step=1),
+                    "weight": st.column_config.NumberColumn("Weight", step=0.1, format="%.2f"),
+                },
+                key="dispersion_editor",
+            )
+            _update_dispersion_annotations_from_dataframe(edited_dispersion_df)
+
+            export_dispersion = _export_dispersion_annotations(dispersion_image)
+            st.download_button(
+                "Download dispersion annotations",
+                export_dispersion,
+                file_name=f"{dispersion_image.label or 'dispersion'}_annotations.json",
+            )
 
 
 if __name__ == "__main__":

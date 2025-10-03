@@ -6,6 +6,7 @@ from typing import Tuple
 
 import numpy as np
 
+from .dispersion import DispersionImage
 from .event_models import EventData, EventMetadata, TraceData, TraceMetadata
 
 
@@ -71,3 +72,23 @@ def generate_synthetic_event(
         magnitude=5.1,
     )
     return EventData(metadata=event_metadata, traces=traces)
+
+
+def generate_demo_dispersion(
+    num_periods: int = 120,
+    num_velocities: int = 160,
+    period_range: Tuple[float, float] = (5.0, 50.0),
+    velocity_range: Tuple[float, float] = (2.0, 5.0),
+) -> DispersionImage:
+    """Generate a synthetic dispersion energy image for demonstration."""
+
+    periods = np.linspace(period_range[0], period_range[1], num_periods)
+    velocities = np.linspace(velocity_range[0], velocity_range[1], num_velocities)
+    pp, vv = np.meshgrid(periods, velocities)
+
+    fundamental = np.exp(-((pp - 20.0) ** 2) / 200.0) * np.exp(-((vv - 3.5) ** 2) / 0.08)
+    first_higher = 0.6 * np.exp(-((pp - 30.0) ** 2) / 250.0) * np.exp(-((vv - 4.2) ** 2) / 0.05)
+    noise = 0.05 * np.random.default_rng(1234).random(size=fundamental.shape)
+
+    energy = fundamental + first_higher + noise
+    return DispersionImage(periods=periods, velocities=velocities, energy=energy, label="demo-dispersion")
