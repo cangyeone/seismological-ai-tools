@@ -301,10 +301,10 @@ while True:
     
     # view polarity data
     for k in range(npol):
-        print '{0}   {1} {2} {3} {4}'.format(k,sname[k],p_azi_mc[k,0],p_the_mc[k,0],p_pol[k])
+        print('{0}   {1} {2} {3} {4}'.format(k, sname[k], p_azi_mc[k, 0], p_the_mc[k, 0], p_pol[k]))
     
     # stop if there aren't enough polarities
-    print 'cid = {0}  npol = {1}'.format(icusp,npol)
+    print('cid = {0}  npol = {1}'.format(icusp, npol))
     if (npol < npolmin):
         str_avg[0] = 999
         dip_avg[0] = 99
@@ -354,8 +354,9 @@ while True:
         nmult,str_avg,dip_avg,rak_avg,prob,var_est = mech_prob(f1norm[:,:nout2],f2norm[:,:nout2],cangle,prob_max,nout2) # nout2
         
         for imult in range(nmult):
-            var_avg[imult] = (var_est[0,imult] + var_est[1,imult]) / 2.
-            print 'cid = {0} {1}  mech = {2} {3} {4}'.format(icusp,imult,str_avg[imult],dip_avg[imult],rak_avg[imult])
+            var_avg[imult] = (var_est[0, imult] + var_est[1, imult]) / 2.
+            print('cid = {0} {1}  mech = {2} {3} {4}'.format(
+                icusp, imult, str_avg[imult], dip_avg[imult], rak_avg[imult]))
             # find misfit for prefered solution
             mfrac[imult],stdr[imult] =  get_misf(p_azi_mc[:npol,0],p_the_mc[:npol,0],p_pol[:npol],p_qual[:npol],str_avg[imult],dip_avg[imult],rak_avg[imult],npol) # npol
             
