@@ -12,7 +12,7 @@ class Parameter:
     npicker = 1                  # 使用多少模型进行拾取单个模型单日数据需要5G，假设有12G内存，可以设置为2
     npre = 2                     # 使用多个进程对数据进行读取等
     # 是否处理的数据
-    is_seed = True #如果True则可以读取同一文件中的多道数据多道数据
+    is_seed = False #如果True则可以读取同一文件中的多道数据多道数据
     filenametag = ".mseed"        # 文件扩展名，在seed文件也会用到
     #SC.A0801.40.EIE.D.20221400520064953.sac
     # 文件名格式NET.STATION.LOC.CHANNEL.OTHERS.mseed
