@@ -1,3 +1,8 @@
+
+> This repository provides seismic event detection methods based on the **PnSn phase picker**, together with a set of auxiliary tools for seismic phase picking, phase association, and earthquake event detection. For detailed documentation, usage examples, and model descriptions, please refer to: [https://github.com/cangyeone/pnsn](https://github.com/cangyeone/pnsn)
+
+
+
 ## Seismic Phase Detection Models
 
 This directory collects pre-trained neural networks for seismic phase detection that operate on 100 Hz waveform data from the Chinese national seismic network. All models can be applied directly to continuous waveform archives for automated picking of P- and S-wave arrivals, and several extend the phase set to include teleseismic and upper-mantle arrivals.
