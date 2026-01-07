@@ -29,5 +29,14 @@ Please refer to the content in each respective folder.
 #### Contribution Participation
 Contributions can be made by contacting cangye@Hotmail.com.
 
-#### License 
-GPLv3
+
+## License & Commercial Use
+
+This code is licensed under CC BY-NC-ND 4.0.
+
+Any academic use MUST:
+1. Obtain prior permission
+2. Explicitly cite the author
+3. Acknowledge the contribution as core methodology
+
+* **Commercial use / integration / redistribution:** please contact the corresponding author to obtain permission and discuss licensing terms (email below). 
